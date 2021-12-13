@@ -5,22 +5,27 @@ This python script allows users to query their Code Insight v7 system and obtain
 ## Prerequisites
 The following prerequisites are requried to run this script:
  - Code Insight v7 installation
- - Code Insight user access token
+ - Code Insight administrator user access token
  - Python v.3.5 or later
 
 ## Script Configuration
-In ***inventory_search.py*** please update the following variables:
+In [inventory_search.py](inventory_search.py) please update the following variables:
+
 ```python
 codeInsightURL = "http://code_insight_server_host_name:port"
 adminAuthToken = "*****"
 searchTerms = "enter a comma separated list; default values have been provided"
 ```
+
 ## Running the Script
 To run the script open a shell or command prompt and run the following command:
+
 ```python
-python inventory_search.py
+python(3) inventory_search.py
 ```
+
 ## Script Output
+
 The script will generate the following output files:
  - ***_inventory_search.log***: a log of the script execution
  - ***inventory_search_results.csv***: a comma separated data file that can be opened in Excel for filtering, sorting, and annotating. The following fields are written to the data file: ***Project Name***, ***Project Contact***, ***Inventory Item***, ***Inventory URL***.
