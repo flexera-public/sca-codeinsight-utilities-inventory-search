@@ -13,11 +13,11 @@ import logging
 import requests
 import csv
 
-codeInsightURL = "UPDATE_ME"
-adminAuthToken = "UPDATE_ME"
+codeInsightURL = "http://code_insight_server_host_name:port"
+adminAuthToken = "*****"
 
 searchTerms = ["druid", "dubbo", "elasticsearch", "flink", "flume", "kafka", "log4j", "logstash", "solr", "struts"]
-ignoredProjects = ["PROJECT 1", "PROJECT 2", "PROJECT 3"]  # Projects not to examine for one reason or another
+resultsFileName = "inventory_search_results.csv"
 
 ###################################################################################
 # Test the version of python to make sure it's at least the version the script
@@ -38,6 +38,7 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)  # Disable logging for re
 #----------------------------------------------------------------------#
 def main():
     resultsHits = []
+    skippedProjects = []
     projectContacts = {}
     projectIndex = 1
 
@@ -55,23 +56,28 @@ def main():
         projectContact = project["owner"]
         
         print("")
-        if projectName not in ignoredProjects:
+        print("Examining project %s  --  Project %s of %s" %(projectName, projectIndex, numProjects))
+        logger.debug("Examining project %s  --  Project %s of %s" %(projectName, projectIndex, numProjects))
+        # Get email address for owner
+        if projectContact in projectContacts:
+            projectContactEmail = projectContacts[projectContact]
+        else:
+            logger.debug("    Searching for email address for project contact: %s" %projectContact)
+            contactDetails = get_user_by_login(projectContact, codeInsightURL, adminAuthToken)
+            projectContactEmail = contactDetails[0]["email"]
+            projectContacts[projectContact] = projectContactEmail
 
-            print("Examining project %s  --  Project %s of %s" %(projectName, projectIndex, numProjects))
-            logger.debug("Examining project %s  --  Project %s of %s" %(projectName, projectIndex, numProjects))
-            # Get email address for owner
-            if projectContact in projectContacts:
-                projectContactEmail = projectContacts[projectContact]
-            else:
-                logger.debug("    Searching for email address for project contact: %s" %projectContact)
-                contactDetails = get_user_by_login(projectContact, codeInsightURL, adminAuthToken)
-                projectContactEmail = contactDetails[0]["email"]
-                projectContacts[projectContact] = projectContactEmail
+        print("    Collecting inventory summary")
 
-            print("    Collecting inventory summary")
+        inventoryItems = get_all_project_inventory(codeInsightURL, projectID, adminAuthToken)
 
-            inventoryItems =get_all_project_inventory(codeInsightURL, projectID, adminAuthToken)
-
+        if "Error" in inventoryItems:
+            logger.error("    *** Error collecting project inventory information")
+            print("        *** Error collecting project inventory information")
+            print("            *** %s" %inventoryItems["Error"])
+            skippedProjects.append(projectName)
+        else:
+            
             print("    Searching inventory items for components containing search terms")
             for inventoryItem in inventoryItems:
                 inventoryItemName = inventoryItem["name"]
@@ -85,23 +91,29 @@ def main():
                     # If there is a match add a line to the list
                     resultsHits.append([projectName, projectContactEmail, inventoryItemName, inventoryItemURL])
 
-        else:
-            print("***  Ignoring project %s  --  Project %s of %s" %(projectName, projectIndex, numProjects))
-            logger.debug("    Ignoring project %s  --  Project %s of %s" %(projectName, projectIndex, numProjects))
-
         projectIndex+=1
 
 
-
+    print("")
+    print("Creating csv results file: %s" %resultsFileName)
     ###########################################
     # Create an csv file with the results
-    with open('inventory_search_results.csv', 'w', newline='') as resultsFile:
+    with open(resultsFileName, 'w', newline='') as resultsFile:
         filewriter = csv.writer(resultsFile, delimiter=',', quotechar='|', quoting=csv.QUOTE_MINIMAL)
 
         filewriter.writerow(['Project Name', 'Project Contact', 'Inventory Item', "Inventory URL"])
 
         for hit in resultsHits:
             filewriter.writerow(hit)
+    
+    ###########################################
+    # Were there any proejcts skipped?
+    if len(skippedProjects):
+        print("")
+        print("The following project should be manually reviewed due to issues retreived inventory")
+
+        for project in skippedProjects:
+            print("    %s" %project)
 
 
 #------------------------------------------------------------------------------------------#
@@ -203,7 +215,7 @@ def get_all_project_inventory(baseURL, projectID, authToken):
     try:
         response = requests.get(RESTAPI_URL, headers=headers)
     except requests.exceptions.RequestException as error:  # Just catch all errors
-        logger.error(error)
+        logger.error("        %s" %error)
         return     
     
     ###############################################################################
@@ -230,7 +242,7 @@ def get_all_project_inventory(baseURL, projectID, authToken):
                 response = requests.get(RESTAPI_URL, headers=headers)
             except requests.exceptions.RequestException as error:  # Just catch all errors
                 logger.error("    *** Error collecting additional information from project")   
-                logger.error(error)
+                logger.error("        %s" %error)
                 print("    *** Error collecting additional information from project")   
 
             if response.status_code == 200:
@@ -239,24 +251,24 @@ def get_all_project_inventory(baseURL, projectID, authToken):
                 projectInventorySummary += response.json()["data"]
             else:
                 logger.error("Response code %s - %s" %(response.status_code, response.text))
+                return{"Error": "There was an error when attempting to get inventory results from page %s" %(str(nextPage+1))}
   
         return projectInventorySummary
 
     elif response.status_code == 400:
         logger.error("Response code %s - %s" %(response.status_code, response.text))
         print("Response code: %s   -  Bad Request" %response.status_code )
-        response.raise_for_status()
     elif response.status_code == 401:
         logger.error("Response code %s - %s" %(response.status_code, response.text))
         print("Response code: %s   -  Unauthorized" %response.status_code )
-        response.raise_for_status() 
     elif response.status_code == 404:
         logger.error("Response code %s - %s" %(response.status_code, response.text))
         print("Response code: %s   -  Not Found" %response.status_code )
-        response.raise_for_status()   
     else: 
         logger.error("Response code %s - %s" %(response.status_code, response.text))
-        response.raise_for_status()
+        return{"Error": "There was an error when attempting to get the first page of the inventory results"}
+        
+        
 
 #----------------------------------------------------------------------#    
 if __name__ == "__main__":
