@@ -92,12 +92,13 @@ def main():
 
                 # Compare to each item in the list
                 if any(searchTerm.lower() in inventoryItemName.lower() for searchTerm in searchTerms):
-                    # If there is a match so dig deeper to see if valid match
-                    bundledPosition = inventoryItemName.lower().find("bundled with")
-                    foundPosition = inventoryItemName.lower().find("found inside")
-                    dependancyPosition = inventoryItemName.lower().find("dependency of")
+                    # There is a potential match so dig deeper to see if valid match
+                    # by determining if the match is before or after a [ which is used
+                    # in inventory names with "bundled with", "found in" and "dependency of"
 
-                    if bundledPosition == -1 and foundPosition == -1 and dependancyPosition == -1:
+                    bracketPosition = inventoryItemName.lower().find("[")
+
+                    if bracketPosition == -1:
                         # This is a direct inventory item so add it
                         validFinding = True                    
                     else:
@@ -108,18 +109,8 @@ def main():
                             
                             searchTermPosition = inventoryItemName.lower().find(searchTerm.lower())
                             
-                            if bundledPosition != -1 and searchTermPosition > bundledPosition:
+                            if searchTermPosition > bracketPosition:
                                 # The search term is before bundled with so it is a valid hit 
-                                validFinding = False
-                                logger.info("            Not adding %s" %inventoryItemName)
-                                break
-                            elif foundPosition != -1 and searchTermPosition > foundPosition:
-                                # The search term is before found inside so it is a valid hit
-                                validFinding = False
-                                logger.info("            Not adding %s" %inventoryItemName)
-                                break
-                            elif dependancyPosition != -1 and searchTermPosition > dependancyPosition:
-                                # The search term is before dependency of so it is a valid hit 
                                 validFinding = False
                                 logger.info("            Not adding %s" %inventoryItemName)
                                 break
