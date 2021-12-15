@@ -38,6 +38,7 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)  # Disable logging for re
 #----------------------------------------------------------------------#
 def main():
     resultsHits = []
+    numTotalInventoryItems = 0
     skippedProjects = []
     projectContacts = {}
     projectIndex = 1
@@ -70,6 +71,7 @@ def main():
         print("    Collecting inventory summary")
 
         inventoryItems = get_all_project_inventory(codeInsightURL, projectID, adminAuthToken)
+        numTotalInventoryItems += len(inventoryItems)
 
         if "Error" in inventoryItems:
             logger.error("    *** Error collecting project inventory information")
@@ -84,18 +86,59 @@ def main():
                 componentName = inventoryItem["componentName"]
                 inventoryID = inventoryItem["id"]
 
+                validFinding = False
+
                 inventoryItemURL = codeInsightURL + "/codeinsight/FNCI#myprojectdetails/?id=" + str(projectID) + "&tab=projectInventory&pinv=" + str(inventoryID)
 
                 # Compare to each item in the list
-                if any(searchTerm.lower() in componentName.lower() for searchTerm in searchTerms):
-                    # If there is a match add a line to the list
-                    resultsHits.append([projectName, projectContactEmail, inventoryItemName, inventoryItemURL])
+                if any(searchTerm.lower() in inventoryItemName.lower() for searchTerm in searchTerms):
+                    # If there is a match so dig deeper to see if valid match
+                    bundledPosition = inventoryItemName.lower().find("bundled with")
+                    foundPosition = inventoryItemName.lower().find("found inside")
+                    dependancyPosition = inventoryItemName.lower().find("dependency of")
+
+                    if bundledPosition == -1 and foundPosition == -1 and dependancyPosition == -1:
+                        # This is a direct inventory item so add it
+                        validFinding = True                    
+                    else:
+                        # The item is included due to something else
+                        # Is an item include due to the search term component or is the search
+                        # term component brought in because of another item?
+                        for searchTerm in searchTerms:
+                            
+                            searchTermPosition = inventoryItemName.lower().find(searchTerm.lower())
+                            
+                            if bundledPosition != -1 and searchTermPosition > bundledPosition:
+                                # The search term is before bundled with so it is a valid hit 
+                                validFinding = False
+                                logger.info("            Not adding %s" %inventoryItemName)
+                                break
+                            elif foundPosition != -1 and searchTermPosition > foundPosition:
+                                # The search term is before found inside so it is a valid hit
+                                validFinding = False
+                                logger.info("            Not adding %s" %inventoryItemName)
+                                break
+                            elif dependancyPosition != -1 and searchTermPosition > dependancyPosition:
+                                # The search term is before dependency of so it is a valid hit 
+                                validFinding = False
+                                logger.info("            Not adding %s" %inventoryItemName)
+                                break
+                            else:
+                                validFinding = True
+                
+                # We have a valid hit to add it to the data for the csv file
+                if validFinding:
+                    resultsHits.append([projectName, projectContactEmail, inventoryItemName, inventoryItemURL]) 
+                    
 
         projectIndex+=1
 
 
     print("")
     print("Creating csv results file: %s" %resultsFileName)
+    print("    Total projects searched: %s" %numProjects)
+    print("    Total inventory tems: %s" %numTotalInventoryItems)
+    print("    Total matching inventory items: %s" %len(resultsHits))
     ###########################################
     # Create an csv file with the results
     with open(resultsFileName, 'w', newline='') as resultsFile:
@@ -110,7 +153,7 @@ def main():
     # Were there any proejcts skipped?
     if len(skippedProjects):
         print("")
-        print("The following project should be manually reviewed due to issues retreived inventory")
+        print("The following project should be manually reviewed due to issues retrieving inventory")
 
         for project in skippedProjects:
             print("    %s" %project)
